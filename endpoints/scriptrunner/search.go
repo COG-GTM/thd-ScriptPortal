@@ -6,11 +6,11 @@ import (
 	"strings"
 )
 
-//ScriptSearch is a naive search for a substring that returns bad results in a json.
+// ScriptSearch is a naive search for a substring that returns bad results in a json.
 func ScriptSearch(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(32 << 20)
 	searchterm := r.FormValue("searchTerm")
-	scripts := configuredScripts
+	scripts := visibleScripts(r)
 	var ret []script
 
 	for _, script := range scripts {

@@ -8,8 +8,11 @@ import (
 	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"strings"
+
+	"github.com/homedepot/ScriptPortal/endpoints/auth"
 )
 
 var configuredScripts []script
@@ -37,6 +40,17 @@ func selectScript(targetName string, list []script) (ret script) {
 	return
 }
 
+func visibleScripts(r *http.Request) []script {
+	user, _ := auth.UserFromContext(r.Context())
+	var visible []script
+	for _, target := range configuredScripts {
+		if target.allows(user) {
+			visible = append(visible, target)
+		}
+	}
+	return visible
+}
+
 func genUUID() string {
 	b := make([]byte, 16)
 	_, err := rand.Read(b)
@@ -48,7 +62,7 @@ func genUUID() string {
 	return uuid
 }
 
-//this is deceptively named. It actually does quite a bit more than just retrieving the file name.
+// this is deceptively named. It actually does quite a bit more than just retrieving the file name.
 func getFileNameFromUpload(file multipart.File, header *multipart.FileHeader, err error) (name string) {
 	defer file.Close()
 	fileNameParts := strings.Split(header.Filename, ".")

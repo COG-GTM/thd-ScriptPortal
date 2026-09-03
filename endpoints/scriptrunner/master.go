@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/homedepot/ScriptPortal/endpoints/auth"
 	"github.com/homedepot/ScriptPortal/endpoints/httpHelpers"
 	"github.com/homedepot/ScriptPortal/globals"
 )
@@ -39,10 +40,7 @@ func setNoCacheHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "post-check=0, pre-check=0")
 }
 
-func setupAndRunScript(w http.ResponseWriter, r *http.Request) {
-	scriptList := configuredScripts
-	scriptName := httpHelpers.GetRelativePath("script", r.URL.Path)
-	targetScript := selectScript(scriptName, scriptList)
+func setupAndRunScript(w http.ResponseWriter, r *http.Request, targetScript script) {
 	setNoCacheHeaders(w)
 	outputFileName := r.PostFormValue("outputFileName")
 	//need a handling of unknown mime types more graceful than just not adding one
@@ -87,17 +85,23 @@ func setupAndRunScript(w http.ResponseWriter, r *http.Request) {
 	runScript(name, args, &stdin, w, uuid)
 }
 
-//ScriptMaster generates a scriptPage according to definitions in scriptconfig.json and runs the script given a POST request formatted properly
+// ScriptMaster generates a scriptPage according to definitions in scriptconfig.json and runs the script given a POST request formatted properly
 func ScriptMaster(w http.ResponseWriter, r *http.Request) {
+	scriptName := httpHelpers.GetRelativePath("script", r.URL.Path)
+	targetScript := selectScript(scriptName, configuredScripts)
+	if targetScript.Name == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	user, _ := auth.UserFromContext(r.Context())
+	if !targetScript.allows(user) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, "forbidden")
+		return
+	}
+
 	switch r.Method {
 	case "GET":
-		scriptList := configuredScripts
-		scriptName := httpHelpers.GetRelativePath("script", r.URL.Path)
-		targetScript := selectScript(scriptName, scriptList)
-		if targetScript.Name == "" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 		targetScript.UUID = genUUID()
 		templhtml, err := ioutil.ReadFile(globals.TemplatePath + "inputform.html")
 		if err != nil {
@@ -105,7 +109,7 @@ func ScriptMaster(w http.ResponseWriter, r *http.Request) {
 		}
 		httpHelpers.AddContentToPage(w, string(templhtml), targetScript)
 	case "POST":
-		setupAndRunScript(w, r)
+		setupAndRunScript(w, r, targetScript)
 
 	default:
 		w.WriteHeader(403)
