@@ -9,9 +9,9 @@ import (
 	"github.com/homedepot/ScriptPortal/globals"
 )
 
-//ScriptIndex generates an index for scripts installed and properly configured in scriptConfig.json
+// ScriptIndex generates an index for scripts installed and properly configured in scriptConfig.json
 func ScriptIndex(w http.ResponseWriter, r *http.Request) {
-	scripts := configuredScripts
+	scripts := visibleScripts(r)
 	templhtml, err := ioutil.ReadFile(globals.TemplatePath + "scriptIndex.html")
 	if err != nil {
 		fmt.Println(err)

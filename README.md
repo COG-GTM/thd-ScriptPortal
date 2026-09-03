@@ -13,8 +13,15 @@ In addition, the data flow of the application allows for users to see what's hap
 1. clone the repo (preferably using go get)
 2. cd to the repo
 3. run the docker build command ```docker build -t scriptportal .```
-4. run the container and bind port 80 on local to the container ```docker run -p80:80 scriptportal```
+4. run the container and bind port 80 on local to the container ```docker run -p80:8080 -e SCRIPTPORTAL_BASIC_AUTH_USERS=admin:changeme scriptportal```
 5. connect to [localhost](http://localhost) from your web browser
+
+## Authentication
+Set `SCRIPTPORTAL_BASIC_AUTH_USERS` to a comma-separated list of `username:password` pairs to enable HTTP Basic Authentication.
+Set `SCRIPTPORTAL_ALLOW_UNAUTHENTICATED=true` to explicitly run without authentication, such as for local development.
+Use `-bind` to choose the address the server listens on; it defaults to `0.0.0.0`.
+Add `allowedUsers` to a script configuration entry to restrict that script to the listed authenticated usernames; an empty or omitted list allows all authenticated users.
+Basic Authentication sends credentials in plaintext, so run ScriptPortal behind TLS or a TLS-terminating reverse proxy.
 
 ## Script Configuration:
 The format is defined by the following go code, encoded according to encoding/json standards. 
@@ -28,6 +35,7 @@ type script struct {
         Description    string // to be shown to the user. Usually gives a short explanation of the inputs and outputs and why you may wish to run the script
         FileExtension  string // the file extension of the output file. There to set the mime type of the response. 
         FileUpload     string // present if there is a file 
+        AllowedUsers   []string // usernames allowed to run this script; an empty list allows all authenticated users
 	OutputType     string // either "stdout" or "file" depending on if the program writes to standard output(prefered) or in a file format that cannot be expressed via stdout
         CmdLineFlags   []flag //defined below
         CmdLineOptions []option //defined below
