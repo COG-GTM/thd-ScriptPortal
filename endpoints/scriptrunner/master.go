@@ -145,6 +145,10 @@ func (target script) buildScriptArguments(form url.Values) (name string, argumen
 // hold the response open.
 const stdoutDrainIdle = 100 * time.Millisecond
 
+// stdoutDrainMax caps what is read after the script exits; more than a pipe
+// buffer's worth can only come from a background child still writing.
+const stdoutDrainMax = 1 << 20
+
 func runScript(scriptName string, args []string, input io.Reader, output io.Writer, uuid string) {
 	cmd := exec.Command(scriptName, args...)
 	cmd.Stdin = input
@@ -190,17 +194,28 @@ func runScript(scriptName string, args []string, input io.Reader, output io.Writ
 
 func copyStdout(output io.Writer, stdout *os.File, exited *int32) {
 	buf := make([]byte, 32*1024)
+	drainedAfterExit := 0
 	for {
-		if atomic.LoadInt32(exited) == 1 {
+		afterExit := atomic.LoadInt32(exited) == 1
+		if afterExit {
+			if drainedAfterExit >= stdoutDrainMax {
+				return
+			}
 			stdout.SetReadDeadline(time.Now().Add(stdoutDrainIdle))
 		}
 		n, err := stdout.Read(buf)
+		if afterExit {
+			drainedAfterExit += n
+		}
 		if n > 0 {
 			if _, werr := output.Write(buf[:n]); werr != nil {
 				return
 			}
 		}
 		if err != nil {
+			if !afterExit && os.IsTimeout(err) {
+				continue
+			}
 			return
 		}
 	}

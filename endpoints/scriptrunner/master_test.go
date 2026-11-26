@@ -67,3 +67,15 @@ func TestRunScriptReturnsAllStdoutToSlowWriter(t *testing.T) {
 		t.Fatalf("got %d bytes of stdout, want %d", got.Len(), want.Len())
 	}
 }
+
+func TestRunScriptStopsDrainingBackgroundChildThatKeepsWriting(t *testing.T) {
+	var got bytes.Buffer
+	start := time.Now()
+	runScript("sh", []string{"-c", "echo done; (yes late &)"}, strings.NewReader(""), &got, "test-uuid")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("runScript took %v; it kept draining the background child", elapsed)
+	}
+	if !strings.HasPrefix(got.String(), "done\n") {
+		t.Fatalf("output does not start with the script's own stdout: %.20q", got.String())
+	}
+}
