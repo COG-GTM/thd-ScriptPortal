@@ -92,3 +92,15 @@ func TestRunScriptStopsDrainingBackgroundChildThatKeepsWriting(t *testing.T) {
 		t.Fatalf("output does not start with the script's own stdout: %.20q", got.String())
 	}
 }
+
+func TestRunScriptStopsDrainingBackgroundChildThatTrickles(t *testing.T) {
+	var got cappedWriter
+	start := time.Now()
+	runScript("sh", []string{"-c", "echo done; (while true; do echo late; sleep 0.05; done &)"}, strings.NewReader(""), &got, "test-uuid")
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("runScript took %v; it kept draining a trickling background child", elapsed)
+	}
+	if !strings.HasPrefix(got.String(), "done\n") {
+		t.Fatalf("output does not start with the script's own stdout: %.20q", got.String())
+	}
+}
