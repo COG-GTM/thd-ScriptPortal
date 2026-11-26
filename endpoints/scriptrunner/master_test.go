@@ -2,6 +2,7 @@ package scriptrunner
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -68,12 +69,24 @@ func TestRunScriptReturnsAllStdoutToSlowWriter(t *testing.T) {
 	}
 }
 
+type cappedWriter struct{ bytes.Buffer }
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	if w.Len() > 8<<20 {
+		return 0, errors.New("runScript kept draining past 8 MiB")
+	}
+	return w.Buffer.Write(p)
+}
+
 func TestRunScriptStopsDrainingBackgroundChildThatKeepsWriting(t *testing.T) {
-	var got bytes.Buffer
+	var got cappedWriter
 	start := time.Now()
 	runScript("sh", []string{"-c", "echo done; (yes late &)"}, strings.NewReader(""), &got, "test-uuid")
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("runScript took %v; it kept draining the background child", elapsed)
+	}
+	if got.Len() > 8<<20 {
+		t.Fatalf("runScript drained %d bytes from the background child", got.Len())
 	}
 	if !strings.HasPrefix(got.String(), "done\n") {
 		t.Fatalf("output does not start with the script's own stdout: %.20q", got.String())
