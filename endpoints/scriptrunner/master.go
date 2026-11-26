@@ -22,12 +22,13 @@ import (
 var singleScriptTemplate string = globals.TemplatePath + "inputform.html"
 
 func startFlushingOutput(done chan bool, w http.Flusher) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-done:
 			return
-		default:
-			time.Sleep(time.Second * 1)
+		case <-ticker.C:
 			w.Flush()
 		}
 	}
@@ -149,8 +150,6 @@ func runScript(scriptName string, args []string, input io.Reader, output io.Writ
 	if err != nil {
 		fmt.Println(err)
 	}
-	go io.Copy(output, stdout)
-
 	go func(streamToUser io.Writer, commandOutput io.Reader) {
 		scanner := bufio.NewScanner(commandOutput)
 		scanner.Split(bufio.ScanLines)
@@ -159,7 +158,13 @@ func runScript(scriptName string, args []string, input io.Reader, output io.Writ
 		}
 	}(getOutputStream(uuid), stderr)
 
-	err = cmd.Run()
+	err = cmd.Start()
+	if err != nil {
+		fmt.Fprint(os.Stderr, err)
+		return
+	}
+	io.Copy(output, stdout)
+	err = cmd.Wait()
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 	}
