@@ -36,3 +36,34 @@ func TestRunScriptReturnsAllStdout(t *testing.T) {
 		}
 	}
 }
+
+func TestRunScriptDoesNotWaitForBackgroundChildHoldingStdout(t *testing.T) {
+	var got bytes.Buffer
+	start := time.Now()
+	runScript("sh", []string{"-c", "echo done; (sleep 5; echo late) &"}, strings.NewReader(""), &got, "test-uuid")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("runScript took %v; it waited for the background child", elapsed)
+	}
+	if got.String() != "done\n" {
+		t.Fatalf("got %q, want %q", got.String(), "done\n")
+	}
+}
+
+type slowWriter struct{ bytes.Buffer }
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(20 * time.Millisecond)
+	return w.Buffer.Write(p)
+}
+
+func TestRunScriptReturnsAllStdoutToSlowWriter(t *testing.T) {
+	var want strings.Builder
+	for i := 0; i < 20000; i++ {
+		fmt.Fprintf(&want, "line %d\n", i)
+	}
+	var got slowWriter
+	runScript("sh", []string{"-c", "i=0; while [ $i -lt 20000 ]; do echo \"line $i\"; i=$((i+1)); done"}, strings.NewReader(""), &got, "test-uuid")
+	if got.String() != want.String() {
+		t.Fatalf("got %d bytes of stdout, want %d", got.Len(), want.Len())
+	}
+}

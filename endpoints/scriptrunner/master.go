@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/homedepot/ScriptPortal/endpoints/httpHelpers"
@@ -139,13 +140,21 @@ func (target script) buildScriptArguments(form url.Values) (name string, argumen
 	return
 }
 
+// stdoutDrainIdle bounds how long a finished script's stdout is still read
+// while nothing arrives, so a background child that inherited stdout cannot
+// hold the response open.
+const stdoutDrainIdle = 100 * time.Millisecond
+
 func runScript(scriptName string, args []string, input io.Reader, output io.Writer, uuid string) {
 	cmd := exec.Command(scriptName, args...)
 	cmd.Stdin = input
-	stdout, err := cmd.StdoutPipe()
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
+	defer stdout.Close()
+	cmd.Stdout = stdoutWriter
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		fmt.Println(err)
@@ -159,13 +168,40 @@ func runScript(scriptName string, args []string, input io.Reader, output io.Writ
 	}(getOutputStream(uuid), stderr)
 
 	err = cmd.Start()
+	stdoutWriter.Close()
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		return
 	}
-	io.Copy(output, stdout)
+	var exited int32
+	copied := make(chan struct{})
+	go func() {
+		copyStdout(output, stdout, &exited)
+		close(copied)
+	}()
 	err = cmd.Wait()
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
+	}
+	atomic.StoreInt32(&exited, 1)
+	stdout.SetReadDeadline(time.Now().Add(stdoutDrainIdle))
+	<-copied
+}
+
+func copyStdout(output io.Writer, stdout *os.File, exited *int32) {
+	buf := make([]byte, 32*1024)
+	for {
+		if atomic.LoadInt32(exited) == 1 {
+			stdout.SetReadDeadline(time.Now().Add(stdoutDrainIdle))
+		}
+		n, err := stdout.Read(buf)
+		if n > 0 {
+			if _, werr := output.Write(buf[:n]); werr != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
 	}
 }
